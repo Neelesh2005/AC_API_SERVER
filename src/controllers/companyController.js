@@ -292,7 +292,6 @@ export const getLinksBySymbol = async (req, res, next) => {
   });
 };
 
-// ---------- Ratios Controller ----------
 export const getRatiosBySymbol = async (req, res, next) => {
   const { company } = req.params;
   const { calendarYear } = req.query;
