@@ -2,7 +2,6 @@ import express from "express";
 import dotenv from "dotenv";
 import companyRoutes from "./src/routes/companyRoutes.js";
 import errorHandler from "./middleware/errorHandler.js";
-
 dotenv.config();
 
 const app = express();
