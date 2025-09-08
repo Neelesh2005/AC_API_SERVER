@@ -1,22 +1,25 @@
-import supabase from "../../config/supabaseClient.js";
-import formatResponse from "../utils/responseFormatter.js";
+import supabase from '../../config/supabaseClient.js';
+import { formatResponse, successResponse, errorResponse } from '../utils/responseFormatter.js';
 
+/**
+ * Validate calendar year parameter
+ */
 const validateCalendarYear = (year) => {
   if (!year) return { isValid: true, value: null };
-  
+
   const parsed = parseInt(year);
-  if (isNaN(parsed) || parsed < 2022 || parsed > 2025) {
+  if (isNaN(parsed) || parsed < 2020 || parsed > 2025) {
     return {
       isValid: false,
-      error: formatResponse(
-        "bad_request",
-        "Calendar year must be between 2021 and 2025"
-      ),
+      message: 'Calendar year must be between 2020 and 2025'
     };
   }
   return { isValid: true, value: parsed };
 };
 
+/**
+ * Generic function to fetch financial data
+ */
 const fetchFinancials = async ({
   res,
   next,
@@ -26,84 +29,111 @@ const fetchFinancials = async ({
   calendarYear,
 }) => {
   try {
+    // Validate calendar year
     const yearValidation = validateCalendarYear(calendarYear);
     if (!yearValidation.isValid) {
-      return res.status(400).json(yearValidation.error);
+      return res.status(400).json(
+        errorResponse(yearValidation.message)
+      );
     }
 
+    // Build query
     let query = supabase
-      .from("COMPANY_FINANCIALS")
+      .from('COMPANY_FINANCIALS')
       .select(fields)
-      .eq("symbol", company);
+      .eq('symbol', company.toUpperCase());
 
+    // Add year filter if provided
     if (yearValidation.value) {
-      query = query.eq("calendarYear", yearValidation.value);
+      query = query.eq('calendarYear', yearValidation.value);
     }
 
-    const { data, error } = await query.order("date", { ascending: false });
+    // Execute query
+    const { data, error } = await query.order('date', { ascending: false });
 
-    if (error) return next(error);
+    if (error) {
+      throw error;
+    }
 
     if (!data || data.length === 0) {
-      const yearFilter = calendarYear ? ` for year ${calendarYear}` : "";
-      return res
-        .status(404)
-        .json(
-          formatResponse(
-            "not_found",
-            `No ${statementType.replace("_", " ")} data found for symbol: ${company}${yearFilter}`
-          )
-        );
+      const yearFilter = calendarYear ? ` for year ${calendarYear}` : '';
+      return res.status(404).json(
+        errorResponse(`No ${statementType.replace('_', ' ')} data found for symbol: ${company}${yearFilter}`)
+      );
     }
 
-    res.setHeader("Content-Type", "application/json");
-    res.send(
-      JSON.stringify(
-        {
-          status: "success",
-          data: {
-            symbol: company,
-            statement_type: statementType,
-            calendar_year: calendarYear || "all_years",
-            records: data,
-          },
-        },
-        null,
-        2
-      )
+    // Send successful response
+    res.status(200).json(
+      successResponse(`${statementType.replace('_', ' ')} data retrieved successfully`, {
+        symbol: company.toUpperCase(),
+        statement_type: statementType,
+        calendar_year: calendarYear || 'all_years',
+        total_records: data.length,
+        records: data
+      })
     );
-  } catch (err) {
-    next(err);
+
+  } catch (error) {
+    console.error(`Error fetching ${statementType}:`, error);
+    next(error);
   }
 };
 
-
+/**
+ * Get all financial data by symbol
+ */
 export const getFinancialsBySymbol = async (req, res, next) => {
   try {
     const { symbol } = req.params;
-    const { data, error } = await supabase
-      .from("COMPANY_FINANCIALS")
-      .select("*")
-      .eq("symbol", symbol);
 
-    if (error) return next(error);
-    if (!data || data.length === 0) {
-      return res
-        .status(404)
-        .json(formatResponse("not_found", `No financials found for symbol: ${symbol}`));
+    if (!symbol) {
+      return res.status(400).json(
+        errorResponse('Company symbol is required')
+      );
     }
 
-    res.setHeader("Content-Type", "application/json");
-    res.send(JSON.stringify({ status: "success", data }, null, 2));
-  } catch (err) {
-    next(err);
+    const { data, error } = await supabase
+      .from('COMPANY_FINANCIALS')
+      .select('*')
+      .eq('symbol', symbol.toUpperCase())
+      .order('date', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data || data.length === 0) {
+      return res.status(404).json(
+        errorResponse(`No financial data found for symbol: ${symbol}`)
+      );
+    }
+
+    res.status(200).json(
+      successResponse('Financial data retrieved successfully', {
+        symbol: symbol.toUpperCase(),
+        total_records: data.length,
+        records: data
+      })
+    );
+
+  } catch (error) {
+    console.error('Error fetching financials:', error);
+    next(error);
   }
 };
 
-// ---------- Balance Sheet Controller ----------
+/**
+ * Get balance sheet data by symbol
+ */
 export const getBalanceSheetBySymbol = async (req, res, next) => {
-  const { company } = req.params;
+  const { symbol } = req.params;
   const { calendarYear } = req.query;
+
+  if (!symbol) {
+    return res.status(400).json(
+      errorResponse('Company symbol is required')
+    );
+  }
 
   const balanceSheetFields = `
     symbol,
@@ -159,17 +189,25 @@ export const getBalanceSheetBySymbol = async (req, res, next) => {
   await fetchFinancials({
     res,
     next,
-    company,
+    company: symbol,
     fields: balanceSheetFields,
-    statementType: "balance_sheet",
+    statementType: 'balance_sheet',
     calendarYear,
   });
 };
 
-// ---------- Cash Flow Controller ----------
+/**
+ * Get cash flow statement data by symbol
+ */
 export const getCashFlowBySymbol = async (req, res, next) => {
-  const { company } = req.params;
+  const { symbol } = req.params;
   const { calendarYear } = req.query;
+
+  if (!symbol) {
+    return res.status(400).json(
+      errorResponse('Company symbol is required')
+    );
+  }
 
   const cashFlowFields = `
     symbol,
@@ -208,19 +246,27 @@ export const getCashFlowBySymbol = async (req, res, next) => {
   await fetchFinancials({
     res,
     next,
-    company,
+    company: symbol,
     fields: cashFlowFields,
-    statementType: "cash_flow",
+    statementType: 'cash_flow',
     calendarYear,
   });
 };
 
-// ---------- P&L Controller ----------
-export const getPnLBySymbol = async (req, res, next) => {
-  const { company } = req.params;
+/**
+ * Get income statement (P&L) data by symbol
+ */
+export const getIncomeStatementBySymbol = async (req, res, next) => {
+  const { symbol } = req.params;
   const { calendarYear } = req.query;
 
-  const pnlFields = `
+  if (!symbol) {
+    return res.status(400).json(
+      errorResponse('Company symbol is required')
+    );
+  }
+
+  const incomeStatementFields = `
     symbol,
     date,
     calendarYear,
@@ -258,16 +304,25 @@ export const getPnLBySymbol = async (req, res, next) => {
   await fetchFinancials({
     res,
     next,
-    company,
-    fields: pnlFields,
-    statementType: "income_statement",
+    company: symbol,
+    fields: incomeStatementFields,
+    statementType: 'income_statement',
     calendarYear,
   });
 };
 
+/**
+ * Get financial statement links by symbol
+ */
 export const getLinksBySymbol = async (req, res, next) => {
-  const { company } = req.params;
+  const { symbol } = req.params;
   const { calendarYear } = req.query;
+
+  if (!symbol) {
+    return res.status(400).json(
+      errorResponse('Company symbol is required')
+    );
+  }
 
   const linksFields = `
     symbol,
@@ -285,16 +340,25 @@ export const getLinksBySymbol = async (req, res, next) => {
   await fetchFinancials({
     res,
     next,
-    company,
+    company: symbol,
     fields: linksFields,
-    statementType: "financial_links",
+    statementType: 'financial_links',
     calendarYear,
   });
 };
 
+/**
+ * Get financial ratios by symbol
+ */
 export const getRatiosBySymbol = async (req, res, next) => {
-  const { company } = req.params;
+  const { symbol } = req.params;
   const { calendarYear } = req.query;
+
+  if (!symbol) {
+    return res.status(400).json(
+      errorResponse('Company symbol is required')
+    );
+  }
 
   const ratiosFields = `
     symbol,
@@ -313,9 +377,9 @@ export const getRatiosBySymbol = async (req, res, next) => {
   await fetchFinancials({
     res,
     next,
-    company,
+    company: symbol,
     fields: ratiosFields,
-    statementType: "financial_ratios",
+    statementType: 'financial_ratios',
     calendarYear,
   });
 };

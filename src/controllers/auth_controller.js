@@ -1,236 +1,281 @@
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-import supabase from "../../config/supabaseClient.js";
-import formatResponse from "../utils/responseFormatter.js";
-import { generateToken, validateEmail, validatePassword } from "../utils/auth_utils.js";
+import bcrypt from 'bcryptjs';
+import supabase from '../../config/supabaseClient.js';
+import { formatResponse, successResponse, errorResponse, validationErrorResponse } from '../utils/responseFormatter.js';
+import { 
+  generateToken, 
+  validateEmail, 
+  validatePassword, 
+  validateUsername,
+  createAuthResponse,
+  sanitizeInput,
+  validateRequiredFields
+} from '../utils/auth_utils.js';
 
-// Register new user
+/**
+ * Register new user
+ */
 export const register = async (req, res, next) => {
   try {
     const { username, email, password } = req.body;
 
-    // Validation
-    if (!username || !email || !password) {
+    // Validate required fields
+    const fieldValidation = validateRequiredFields(req.body, ['username', 'email', 'password']);
+    if (!fieldValidation.isValid) {
       return res.status(400).json(
-        formatResponse("bad_request", "Username, email, and password are required")
+        validationErrorResponse(fieldValidation.message, fieldValidation.errors)
       );
     }
 
-    if (!validateEmail(email)) {
+    // Sanitize inputs
+    const sanitizedUsername = sanitizeInput(username);
+    const sanitizedEmail = sanitizeInput(email.toLowerCase());
+
+    // Validate email format
+    if (!validateEmail(sanitizedEmail)) {
       return res.status(400).json(
-        formatResponse("bad_request", "Invalid email format")
+        validationErrorResponse('Invalid email format')
       );
     }
 
+    // Validate username
+    const usernameValidation = validateUsername(sanitizedUsername);
+    if (!usernameValidation.isValid) {
+      return res.status(400).json(
+        validationErrorResponse(usernameValidation.message)
+      );
+    }
+
+    // Validate password strength
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.isValid) {
       return res.status(400).json(
-        formatResponse("bad_request", passwordValidation.message)
+        validationErrorResponse(passwordValidation.message)
       );
     }
 
     // Check if user already exists
-    const { data: existingUser } = await supabase
-      .from("users")
-      .select("id")
-      .or(`email.eq.${email},username.eq.${username}`)
-      .single();
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('id')
+      .or(`email.eq.${sanitizedEmail},username.eq.${usernameValidation.value}`)
+      .maybeSingle();
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      throw checkError;
+    }
 
     if (existingUser) {
       return res.status(409).json(
-        formatResponse("conflict", "User with this email or username already exists")
+        errorResponse('User already exists with this email or username')
       );
     }
 
     // Hash password
-    const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     // Create user
-    const { data: newUser, error } = await supabase
-      .from("users")
-      .insert([
-        {
-          username,
-          email: email.toLowerCase(),
-          password: hashedPassword,
-        }
-      ])
-      .select("id, username, email, created_at")
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert([{
+        username: usernameValidation.value,
+        email: sanitizedEmail,
+        password: hashedPassword
+      }])
+      .select('id, username, email, created_at, updated_at')
       .single();
 
-    if (error) {
-      console.error("Registration error:", error);
-      return res.status(500).json(
-        formatResponse("error", "Failed to create user")
-      );
+    if (insertError) {
+      throw insertError;
     }
 
-    // Generate JWT token
+    // Generate token
     const token = generateToken(newUser.id);
 
+    // Send response
     res.status(201).json(
-      formatResponse("success", "User registered successfully", {
-        user: {
-          id: newUser.id,
-          username: newUser.username,
-          email: newUser.email,
-          created_at: newUser.created_at
-        },
-        token
-      })
+      successResponse('User registered successfully', createAuthResponse(newUser, token))
     );
+
   } catch (error) {
+    console.error('Registration error:', error);
     next(error);
   }
 };
 
-// Login user
+/**
+ * Login user
+ */
 export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
-    if (!email || !password) {
+    // Validate required fields
+    const fieldValidation = validateRequiredFields(req.body, ['email', 'password']);
+    if (!fieldValidation.isValid) {
       return res.status(400).json(
-        formatResponse("bad_request", "Email and password are required")
+        validationErrorResponse(fieldValidation.message, fieldValidation.errors)
       );
     }
 
-    // Find user
-    const { data: user, error } = await supabase
-      .from("users")
-      .select("id, username, email, password, created_at")
-      .eq("email", email.toLowerCase())
-      .single();
+    // Sanitize email
+    const sanitizedEmail = sanitizeInput(email.toLowerCase());
 
-    if (error || !user) {
+    // Find user by email
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, username, email, password, created_at, updated_at')
+      .eq('email', sanitizedEmail)
+      .maybeSingle();
+
+    if (userError && userError.code !== 'PGRST116') {
+      throw userError;
+    }
+
+    if (!user) {
       return res.status(401).json(
-        formatResponse("unauthorized", "Invalid email or password")
+        errorResponse('Invalid credentials')
       );
     }
 
     // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
       return res.status(401).json(
-        formatResponse("unauthorized", "Invalid email or password")
+        errorResponse('Invalid credentials')
       );
     }
 
-    // Generate JWT token
+    // Generate token
     const token = generateToken(user.id);
 
+    // Remove password from user object
+    const { password: _, ...userWithoutPassword } = user;
+
+    // Send response
     res.status(200).json(
-      formatResponse("success", "Login successful", {
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          created_at: user.created_at
-        },
-        token
-      })
+      successResponse('Login successful', createAuthResponse(userWithoutPassword, token))
     );
+
   } catch (error) {
+    console.error('Login error:', error);
     next(error);
   }
 };
 
-// Get current user profile
+/**
+ * Get user profile
+ */
 export const getProfile = async (req, res, next) => {
   try {
-    // User is already available from auth middleware
+    // User is attached to req by auth middleware
     res.status(200).json(
-      formatResponse("success", "Profile retrieved successfully", {
-        user: req.user
-      })
+      successResponse('Profile retrieved successfully', { user: req.user })
     );
   } catch (error) {
+    console.error('Get profile error:', error);
     next(error);
   }
 };
 
-// Update user profile
+/**
+ * Update user profile
+ */
 export const updateProfile = async (req, res, next) => {
   try {
     const { username } = req.body;
     const userId = req.user.id;
 
-    if (!username) {
+    // Validate username if provided
+    if (username !== undefined) {
+      const usernameValidation = validateUsername(username);
+      if (!usernameValidation.isValid) {
+        return res.status(400).json(
+          validationErrorResponse(usernameValidation.message)
+        );
+      }
+
+      // Check if username is already taken by another user
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', usernameValidation.value)
+        .neq('id', userId)
+        .maybeSingle();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw checkError;
+      }
+
+      if (existingUser) {
+        return res.status(409).json(
+          errorResponse('Username already taken')
+        );
+      }
+
+      // Update user profile
+      const { data: updatedUser, error: updateError } = await supabase
+        .from('users')
+        .update({ 
+          username: usernameValidation.value,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select('id, username, email, created_at, updated_at')
+        .single();
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      res.status(200).json(
+        successResponse('Profile updated successfully', { user: updatedUser })
+      );
+    } else {
       return res.status(400).json(
-        formatResponse("bad_request", "Username is required")
+        validationErrorResponse('No fields provided to update')
       );
     }
 
-    // Check if username is already taken by another user
-    const { data: existingUser } = await supabase
-      .from("users")
-      .select("id")
-      .eq("username", username)
-      .neq("id", userId)
-      .single();
-
-    if (existingUser) {
-      return res.status(409).json(
-        formatResponse("conflict", "Username already taken")
-      );
-    }
-
-    // Update user
-    const { data: updatedUser, error } = await supabase
-      .from("users")
-      .update({ username })
-      .eq("id", userId)
-      .select("id, username, email, created_at")
-      .single();
-
-    if (error) {
-      console.error("Profile update error:", error);
-      return res.status(500).json(
-        formatResponse("error", "Failed to update profile")
-      );
-    }
-
-    res.status(200).json(
-      formatResponse("success", "Profile updated successfully", {
-        user: updatedUser
-      })
-    );
   } catch (error) {
+    console.error('Update profile error:', error);
     next(error);
   }
 };
 
-// Change password
+/**
+ * Change user password
+ */
 export const changePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
     const userId = req.user.id;
 
-    if (!currentPassword || !newPassword) {
+    // Validate required fields
+    const fieldValidation = validateRequiredFields(req.body, ['currentPassword', 'newPassword']);
+    if (!fieldValidation.isValid) {
       return res.status(400).json(
-        formatResponse("bad_request", "Current password and new password are required")
+        validationErrorResponse(fieldValidation.message, fieldValidation.errors)
       );
     }
 
+    // Validate new password strength
     const passwordValidation = validatePassword(newPassword);
     if (!passwordValidation.isValid) {
       return res.status(400).json(
-        formatResponse("bad_request", passwordValidation.message)
+        validationErrorResponse(passwordValidation.message)
       );
     }
 
-    // Get current user with password
-    const { data: user, error } = await supabase
-      .from("users")
-      .select("password")
-      .eq("id", userId)
+    // Get current user password
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('password')
+      .eq('id', userId)
       .single();
 
-    if (error || !user) {
+    if (userError || !user) {
       return res.status(404).json(
-        formatResponse("not_found", "User not found")
+        errorResponse('User not found')
       );
     }
 
@@ -238,31 +283,32 @@ export const changePassword = async (req, res, next) => {
     const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
     if (!isCurrentPasswordValid) {
       return res.status(401).json(
-        formatResponse("unauthorized", "Current password is incorrect")
+        errorResponse('Current password is incorrect')
       );
     }
 
     // Hash new password
-    const saltRounds = 12;
-    const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+    const hashedNewPassword = await bcrypt.hash(newPassword, 12);
 
     // Update password
     const { error: updateError } = await supabase
-      .from("users")
-      .update({ password: hashedNewPassword })
-      .eq("id", userId);
+      .from('users')
+      .update({ 
+        password: hashedNewPassword,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
 
     if (updateError) {
-      console.error("Password change error:", updateError);
-      return res.status(500).json(
-        formatResponse("error", "Failed to change password")
-      );
+      throw updateError;
     }
 
     res.status(200).json(
-      formatResponse("success", "Password changed successfully")
+      successResponse('Password changed successfully')
     );
+
   } catch (error) {
+    console.error('Change password error:', error);
     next(error);
   }
 };

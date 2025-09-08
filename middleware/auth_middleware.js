@@ -1,52 +1,66 @@
-import jwt from "jsonwebtoken";
-import supabase from "../config/supabaseClient.js";
-import formatResponse from "../src/utils/responseFormatter.js";
+import jwt from 'jsonwebtoken';
+import supabase from '../config/supabaseClient.js';
+import { formatResponse } from '../src/utils/responseFormatter.js';
+import { extractTokenFromHeader } from '../src/utils/auth_utils.js';
 
 const authMiddleware = async (req, res, next) => {
   try {
+    // Extract token from Authorization header
     const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = extractTokenFromHeader(authHeader);
+
+    if (!token) {
       return res.status(401).json(
-        formatResponse("unauthorized", "Access token required")
+        formatResponse('unauthorized', 'Access token required')
       );
     }
-
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
     // Verify JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // Check if user still exists in database
-    const { data: user, error } = await supabase
-      .from("users")
-      .select("id, email, username, created_at")
-      .eq("id", decoded.userId)
-      .single();
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (jwtError) {
+      if (jwtError.name === 'JsonWebTokenError') {
+        return res.status(401).json(
+          formatResponse('unauthorized', 'Invalid token')
+        );
+      }
+      if (jwtError.name === 'TokenExpiredError') {
+        return res.status(401).json(
+          formatResponse('unauthorized', 'Token expired')
+        );
+      }
+      throw jwtError;
+    }
 
-    if (error || !user) {
+    // Get user from database
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, email, username, created_at, updated_at')
+      .eq('id', decoded.userId)
+      .maybeSingle();
+
+    if (userError && userError.code !== 'PGRST116') {
+      console.error('Database error in auth middleware:', userError);
+      throw userError;
+    }
+
+    if (!user) {
       return res.status(401).json(
-        formatResponse("unauthorized", "Invalid token or user not found")
+        formatResponse('unauthorized', 'Invalid token - user not found')
       );
     }
 
-    // Add user info to request object
+    // Attach user to request object
     req.user = user;
+    req.token = token;
     next();
+
   } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json(
-        formatResponse("unauthorized", "Invalid token")
-      );
-    } else if (error.name === 'TokenExpiredError') {
-      return res.status(401).json(
-        formatResponse("unauthorized", "Token expired")
-      );
-    } else {
-      return res.status(500).json(
-        formatResponse("error", "Authentication error")
-      );
-    }
+    console.error('Auth middleware error:', error);
+    return res.status(500).json(
+      formatResponse('error', 'Authentication error')
+    );
   }
 };
 

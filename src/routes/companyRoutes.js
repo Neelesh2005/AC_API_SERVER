@@ -1,22 +1,26 @@
-import express from "express";
+import express from 'express';
 import { 
   getFinancialsBySymbol,
   getBalanceSheetBySymbol,
   getCashFlowBySymbol,
-  getPnLBySymbol,
+  getIncomeStatementBySymbol,
   getLinksBySymbol,
   getRatiosBySymbol
-} from "../controllers/companyController.js";
+} from '../controllers/companyController.js';
 
 const router = express.Router();
 
-router.get("/company/:symbol", getFinancialsBySymbol);
+// IMPORTANT: More specific routes must come BEFORE general routes
+// The order matters! Express matches routes in the order they are defined
 
-router.get("/company/balancesheet/:company", getBalanceSheetBySymbol);
-router.get("/company/cfs/:company", getCashFlowBySymbol);
-router.get("/company/pnl/:company", getPnLBySymbol);
+// Specific financial statement routes (these must come first)
+router.get('/balance-sheet/:symbol', getBalanceSheetBySymbol);
+router.get('/cash-flow/:symbol', getCashFlowBySymbol);
+router.get('/income-statement/:symbol', getIncomeStatementBySymbol);
+router.get('/links/:symbol', getLinksBySymbol);
+router.get('/ratios/:symbol', getRatiosBySymbol);
 
-router.get("/company/links/:company", getLinksBySymbol);
-router.get("/company/ratios/:company", getRatiosBySymbol);
+// General company route (this must come last)
+router.get('/:symbol', getFinancialsBySymbol);
 
 export default router;

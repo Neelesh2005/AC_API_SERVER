@@ -1,72 +1,96 @@
-import express from "express";
-import dotenv from "dotenv";
-import companyRoutes from "./src/routes/companyRoutes.js";
-import authRoutes from "./src/routes/auth_routes.js";
-import errorHandler from "./middleware/errorHandler.js";
-import routesList from "./src/utils/routeLists.js";
-import formatResponse from "./src/utils/responseFormatter.js";
+import express from 'express';
+import dotenv from 'dotenv';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import cors from 'cors';
 
+// Import routes
+import authRoutes from './src/routes/auth_routes.js';
+import companyRoutes from './src/routes/companyRoutes.js';
+
+// Import middleware
+import errorHandler from './middleware/errorHandler.js';
+import { formatResponse } from './src/utils/responseFormatter.js';
+import { routesList } from './src/utils/routeLists.js';
+
+// Load environment variables
 dotenv.config();
 
 const app = express();
 
-// Middleware
+// Security middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: formatResponse('error', 'Too many requests from this IP, please try again later.'),
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use(limiter);
+
+// Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// CORS headers (add if needed for frontend)
+// Request logging
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
-
-// Health check route
-app.get("/health", (req, res) => {
-  res.status(200).json(
-    formatResponse("success", "Server is healthy", {
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime()
-    })
-  );
-});
-
-// Root route
-app.get("/", (req, res) => {
-  res.status(200).json(
-    formatResponse("success", "Welcome to AC_API_SERVER 🚀", {
-      available_routes: routesList,
-      documentation: "Check README.md for detailed API documentation",
-      version: "1.0.0"
-    })
-  );
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
 });
 
 // Routes
-app.use("/auth", authRoutes);      // Authentication routes
-app.use("/server", companyRoutes); // Company data routes
+app.use('/api/auth', authRoutes);
+app.use('/api/company', companyRoutes);
 
-// 404 handler for undefined routes
-app.use("*", (req, res) => {
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json(formatResponse('success', 'Welcome to AC API Server! 🚀', {
+    version: '1.0.0',
+    available_routes: routesList,
+    endpoints: {
+      auth: '/api/auth',
+      company: '/api/company'
+    },
+    documentation: 'Check README.md'
+  }));
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json(formatResponse('success', 'Server is healthy', {
+    timestamp: new Date().toISOString(),
+    uptime: `${Math.floor(process.uptime())} seconds`,
+    memory_usage: {
+      used: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+      total: `${Math.round(process.memoryUsage().heapTotal / 1024 / 1024)}MB`
+    },
+    environment: process.env.NODE_ENV || 'development'
+  }));
+});
+
+// 404 handler
+app.use('*', (req, res) => {
   res.status(404).json(
-    formatResponse("not_found", `Route ${req.method} ${req.originalUrl} not found`)
+    formatResponse('error', `Route ${req.method} ${req.originalUrl} not found`)
   );
 });
 
-// Error handling middleware (must be last)
+// Global error handler (must be last)
 app.use(errorHandler);
 
-const port = process.env.PORT || 5000;
-
-app.listen(port, () => {
-  console.log(`🚀 AC_API_SERVER is running on http://localhost:${port}`);
-  console.log(`📚 API Documentation available at http://localhost:${port}/`);
-  console.log(`🔐 Authentication endpoints: http://localhost:${port}/auth`);
-  console.log(`📊 Company data endpoints: http://localhost:${port}/server`);
+// Start server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log('🚀 AC API Server Started');
+  console.log(`📡 Server running on http://localhost:${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`⏰ Started at: ${new Date().toISOString()}`);
 });
