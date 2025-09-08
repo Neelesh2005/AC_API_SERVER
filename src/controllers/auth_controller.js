@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import supabase from "../../config/supabaseClient.js";
 import formatResponse from "../utils/responseFormatter.js";
-import { generateToken, validateEmail, validatePassword } from "../utils/authUtils.js";
+import { generateToken, validateEmail, validatePassword } from "../utils/auth_utils.js";
 
 // Register new user
 export const register = async (req, res, next) => {
