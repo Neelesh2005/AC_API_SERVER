@@ -81,12 +81,22 @@ const fetchFinancials = async ({
 export const getFinancialsBySymbol = async (req, res, next) => {
   try {
     const { symbol } = req.params;
-    const { data, error } = await supabase
+    const { calendarYear } = req.query;
+
+    // Build query dynamically
+    let query = supabase
       .from("COMPANY_FINANCIALS")
       .select("*")
       .eq("symbol", symbol);
 
+    if (calendarYear) {
+      query = query.eq("calendarYear", calendarYear);
+    }
+
+    const { data, error } = await query;
+
     if (error) return next(error);
+
     if (!data || data.length === 0) {
       return res
         .status(404)
@@ -94,7 +104,10 @@ export const getFinancialsBySymbol = async (req, res, next) => {
     }
 
     res.setHeader("Content-Type", "application/json");
-    res.send(JSON.stringify({ status: "success", data }, null, 2));
+    res.status(200).send(JSON.stringify({
+      status: "success",
+      data,
+    },null,2));
   } catch (err) {
     next(err);
   }
