@@ -47,8 +47,8 @@ app.use((req, res, next) => {
 });
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/company', companyRoutes);
+app.use('/server/auth', authRoutes);
+app.use('/server/company', companyRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -90,7 +90,5 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log('🚀 AC API Server Started');
-  console.log(`📡 Server running on http://localhost:${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`⏰ Started at: ${new Date().toISOString()}`);
+  
 });

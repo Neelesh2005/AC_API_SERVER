@@ -6,7 +6,7 @@ dotenv.config();
 // Validate required environment variables
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_API_KEY) {
   console.error('❌ Missing Supabase credentials in environment variables');
-  console.error('Required: SUPABASE_URL, SUPABASE_ANON_KEY');
+  console.error('Required: SUPABASE_URL, SUPABASE_API_KEY');
   process.exit(1);
 }
 
