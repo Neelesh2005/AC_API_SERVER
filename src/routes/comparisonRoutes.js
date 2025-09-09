@@ -11,12 +11,12 @@ router.use(apiKeyAuth);
 
 router.use(apiLogger);
 // Get available metrics for comparison
-router.get("/comparison/metrics", getAvailableMetrics);
+router.get("/metrics", getAvailableMetrics);
 
 // Get all available sectors
-router.get("/comparison/sectors", getAvailableSectors);
+router.get("/sectors", getAvailableSectors);
 
 // Get top stocks in a sector by metric
-router.get("/comparison/sector/:sector", getTopStocksBySector);
+router.get("/sector/:sector", getTopStocksBySector);
 
 export default router;
