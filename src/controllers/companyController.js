@@ -16,7 +16,16 @@ const validateCalendarYear = (year) => {
   }
   return { isValid: true, value: parsed };
 };
-
+function getTableFromSuffix(suffix) {
+  switch (suffix.toUpperCase()) {
+    case 'NS':
+      return 'COMPANY_FINANCIALS';   // replace with your actual NSE table name
+    case 'BO':
+      return 'BSE_COMPANY_FINANCIALS';   // replace with your actual BSE table name
+    default:
+      return null;
+  }
+}
 const fetchFinancials = async ({
   res,
   next,
@@ -30,9 +39,10 @@ const fetchFinancials = async ({
     if (!yearValidation.isValid) {
       return res.status(400).json(yearValidation.error);
     }
-
+    const [symbol, suffix] = query.split('.');
+    const tableName = getTableFromSuffix(suffix);
     let query = supabase
-      .from("COMPANY_FINANCIALS")
+      .from(tableName)
       .select(fields)
       .eq("symbol", company);
 
@@ -84,8 +94,10 @@ export const getFinancialsBySymbol = async (req, res, next) => {
     const { calendarYear } = req.query;
 
     // Build query dynamically
+    const [company_name, suffix] = query.split('.');
+    const tableName = getTableFromSuffix(suffix);
     let query = supabase
-      .from("COMPANY_FINANCIALS")
+      .from(tableName)
       .select("*")
       .eq("symbol", symbol);
 

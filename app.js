@@ -5,6 +5,7 @@ import errorHandler from "./middleware/errorHandler.js";
 import routesList from "./src/utils/routeLists.js";
 import formatResponse from "./src/utils/responseFormatter.js";
 import comparisonRoutes from "./src/routes/comparisonRoutes.js";
+import newsRoutes from "./src/routes/newsRoutes.js";
 dotenv.config();
 
 const app = express();
@@ -34,6 +35,7 @@ app.get("/health", (req, res) => {
 // Protected routes (require API key)
 app.use("/server/company", companyRoutes);  
 app.use("/server/comparison",comparisonRoutes);
+app.use("/server/news", newsRoutes);
 // Error handling
 app.use(errorHandler);
 

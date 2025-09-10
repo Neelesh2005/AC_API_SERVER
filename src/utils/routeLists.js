@@ -60,6 +60,12 @@ const routesList = [
     description: "Get top 10 stocks in sector by metric",
     auth_required: true,
     example: "/server/comparison/sector/Technology?metric=marketCapitalization&limit=10&calendarYear=2023"
+  },
+  {
+    endpoint: "GET /server/news/:company",
+    description: "Get latest news articles for a company",
+    auth_required: true,
+    example: "/server/news/AAPL"
   }
 ];
 
