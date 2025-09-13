@@ -39,18 +39,28 @@ const fetchFinancials = async ({
     if (!yearValidation.isValid) {
       return res.status(400).json(yearValidation.error);
     }
-    const [symbol, suffix] = query.split('.');
+    
+    // FIX: The error here was using 'query' which was not defined yet.
+    // Instead, we use the 'company' variable which is passed to the function.
+    const [symbol, suffix] = company.split('.');
     const tableName = getTableFromSuffix(suffix);
-    let query = supabase
-      .from(tableName)
-      .select(fields)
-      .eq("symbol", company);
-
-    if (yearValidation.value) {
-      query = query.eq("calendarYear", yearValidation.value);
+    
+    if (!tableName) {
+      return res
+        .status(400)
+        .json(formatResponse("bad_request", "Invalid company symbol suffix."));
     }
 
-    const { data, error } = await query.order("date", { ascending: false });
+    let queryBuilder = supabase
+      .from(tableName)
+      .select(fields)
+      .eq("symbol", company); // Use the destructured 'symbol' variable
+
+    if (yearValidation.value) {
+      queryBuilder = queryBuilder.eq("calendarYear", yearValidation.value);
+    }
+
+    const { data, error } = await queryBuilder.order("date", { ascending: false });
 
     if (error) return next(error);
 
@@ -88,24 +98,33 @@ const fetchFinancials = async ({
 };
 
 
+
 export const getFinancialsBySymbol = async (req, res, next) => {
   try {
     const { symbol } = req.params;
     const { calendarYear } = req.query;
 
-    // Build query dynamically
-    const [company_name, suffix] = query.split('.');
+    // FIX: The error here was also using 'query' which was not defined yet.
+    // We use 'symbol' from req.params instead.
+    const [company_name, suffix] = symbol.split('.');
     const tableName = getTableFromSuffix(suffix);
-    let query = supabase
+
+    if (!tableName) {
+      return res
+        .status(400)
+        .json(formatResponse("bad_request", "Invalid company symbol suffix."));
+    }
+
+    let queryBuilder = supabase
       .from(tableName)
       .select("*")
       .eq("symbol", symbol);
 
     if (calendarYear) {
-      query = query.eq("calendarYear", calendarYear);
+      queryBuilder = queryBuilder.eq("calendarYear", calendarYear);
     }
 
-    const { data, error } = await query;
+    const { data, error } = await queryBuilder;
 
     if (error) return next(error);
 
