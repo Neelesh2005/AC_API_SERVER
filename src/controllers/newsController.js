@@ -1,16 +1,29 @@
 import supabase from "../../config/supabaseClient.js";
 import formatResponse from "../utils/responseFormatter.js";
-const metricsList = [ 'date' , 'description' , 'price_movement']
 
 export const getNewsByTicker = async (req, res) => {
-  const { ticker } = req.params;
-  const { data, error } = await supabase
-      .from('NEWS')
-      .select(metricsList.join(','))
-      .eq('ticker', ticker)
-    
+  try {
+    const rawTicker = req.params.ticker;
+    const cleanTicker = rawTicker.trim();
+
+  
+    const { data, error } = await supabase
+      .from("NEWS")
+      .select("UID, ticker, date, description, price_movement")
+      .ilike("ticker", `%${cleanTicker}%`)  // corrected here
+      .order("date", { ascending: false });
+
     if (error) {
-        return res.status(500).json(formatResponse('error', 'Database query failed', { error: error.message }));
+      return res
+        .status(500)
+        .json(formatResponse("error", "Database query failed", { error: error.message }));
     }
-    res.json(formatResponse('success', `News for ticker ${ticker}`, { news: data }));
-    }
+
+    res.json(formatResponse("success", `News for ticker ${cleanTicker}`, { news: data }));
+  } catch (err) {
+    res
+      .status(500)
+      .json(formatResponse("error", "Unexpected server error", { error: err.message }));
+  }
+};
+

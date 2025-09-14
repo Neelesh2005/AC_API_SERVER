@@ -5,7 +5,7 @@ const apiLogger = (req, res, next) => {
   const ip = req.ip;
   const apiKey = req.headers['x-api-key'] ? req.headers['x-api-key'].substring(0, 8) + '...' : 'none';
   
-  console.log(`[${timestamp}] ${method} ${url} - IP: ${ip} - API Key: ${apiKey}`);
+  console.log(`[${timestamp}] ${method} ${url} - IP: ${ip}`);
   
   next();
 };
