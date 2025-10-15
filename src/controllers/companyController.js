@@ -1,5 +1,6 @@
 import supabase from "../../config/supabaseClient.js";
 import formatResponse from "../utils/responseFormatter.js";
+import getTickerFallback from "../utils/tickerUtils.js";
 
 const validateCalendarYear = (year) => {
   if (!year) return { isValid: true, value: null };
@@ -19,9 +20,9 @@ const validateCalendarYear = (year) => {
 function getTableFromSuffix(suffix) {
   switch (suffix.toUpperCase()) {
     case 'NS':
-      return 'COMPANY_FINANCIALS';   // replace with your actual NSE table name
+      return 'COMPANY_FINANCIALS';  
     case 'BO':
-      return 'BSE_COMPANY_FINANCIALS';   // replace with your actual BSE table name
+      return 'BSE_COMPANY_FINANCIALS';  
     default:
       return null;
   }
@@ -39,63 +40,99 @@ const fetchFinancials = async ({
     if (!yearValidation.isValid) {
       return res.status(400).json(yearValidation.error);
     }
-    
-    // FIX: The error here was using 'query' which was not defined yet.
-    // Instead, we use the 'company' variable which is passed to the function.
-    const [symbol, suffix] = company.split('.');
-    const tableName = getTableFromSuffix(suffix);
-    
-    if (!tableName) {
+
+    const { symbol, suffix, primary, fallback } = getTickerFallback(company);
+    const primaryTable = getTableFromSuffix(suffix);
+
+if (!primaryTable) {
+  return res
+    .status(400)
+    .json(formatResponse("bad_request", "Invalid company symbol suffix."));
+}
+
+
+    if (!primaryTable) {
       return res
         .status(400)
         .json(formatResponse("bad_request", "Invalid company symbol suffix."));
     }
 
     let queryBuilder = supabase
-      .from(tableName)
+      .from(primaryTable)
       .select(fields)
-      .eq("symbol", company); // Use the destructured 'symbol' variable
+      .eq("symbol", company);
 
     if (yearValidation.value) {
       queryBuilder = queryBuilder.eq("calendarYear", yearValidation.value);
     }
 
-    const { data, error } = await queryBuilder.order("date", { ascending: false });
+    let { data, error } = await queryBuilder.order("date", { ascending: false });
 
+    // If error in query itself, pass to next middleware
     if (error) return next(error);
 
-    if (!data || data.length === 0) {
-      const yearFilter = calendarYear ? ` for year ${calendarYear}` : "";
-      return res
-        .status(404)
-        .json(
-          formatResponse(
-            "not_found",
-            `No ${statementType.replace("_", " ")} data found for symbol: ${company}${yearFilter}`
-          )
-        );
+    // If data found, return immediately
+    if (data && data.length > 0) {
+      return res.status(200).json({
+        status: "success",
+        data: {
+          symbol: company,
+          statement_type: statementType,
+          calendar_year: calendarYear || "all_years",
+          records: data,
+        },
+      });
     }
 
-    res.setHeader("Content-Type", "application/json");
-    res.send(
-      JSON.stringify(
-        {
+   
+    const fallbackTable = fallback ? getTableFromSuffix(fallback.split(".")[1]) : null;
+    const fallbackCompany = fallback;
+
+
+    if (fallbackTable) {
+      let fallbackQuery = supabase
+        .from(fallbackTable)
+        .select(fields)
+        .eq("symbol", fallbackCompany);
+
+      if (yearValidation.value) {
+        fallbackQuery = fallbackQuery.eq("calendarYear", yearValidation.value);
+      }
+
+      const { data: fallbackData, error: fallbackError } = await fallbackQuery.order("date", { ascending: false });
+
+      if (fallbackError) return next(fallbackError);
+
+      if (fallbackData && fallbackData.length > 0) {
+        return res.status(200).json({
           status: "success",
+          redirected_from: company,
+          redirected_to: fallbackCompany,
           data: {
-            symbol: company,
+            symbol: fallbackCompany,
             statement_type: statementType,
             calendar_year: calendarYear || "all_years",
-            records: data,
+            records: fallbackData,
           },
-        },
-        null,
-        2
-      )
-    );
+        });
+      }
+    }
+
+    const yearFilter = calendarYear ? ` for year ${calendarYear}` : "";
+    return res
+      .status(404)
+      .json(
+        formatResponse(
+          "not_found",
+          `No ${statementType.replace("_", " ")} data found for symbol: ${company}${yearFilter} (also checked ${fallbackSuffix})`
+        )
+      );
+
   } catch (err) {
     next(err);
   }
 };
+
 
 
 
@@ -104,8 +141,7 @@ export const getFinancialsBySymbol = async (req, res, next) => {
     const { symbol } = req.params;
     const { calendarYear } = req.query;
 
-    // FIX: The error here was also using 'query' which was not defined yet.
-    // We use 'symbol' from req.params instead.
+  
     const [company_name, suffix] = symbol.split('.');
     const tableName = getTableFromSuffix(suffix);
 
