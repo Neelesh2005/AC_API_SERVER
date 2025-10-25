@@ -80,7 +80,7 @@ async function queryFinancialsTable(table, sector, selectedMetric, yearValidatio
     .from(table)
     .select(`
       symbol,
-      sector,
+      Sector,
       date,
       calendarYear,
       period,
@@ -93,8 +93,10 @@ async function queryFinancialsTable(table, sector, selectedMetric, yearValidatio
       eps,
       totalAssets
     `)
-    .eq("sector", sector)
-    .not(selectedMetric.column, "is", null);
+    .eq("Sector", sector)
+    .not(selectedMetric.column, "is", null)
+    .order(selectedMetric.column, { ascending: selectedMetric.order === 'asc' })
+    .limit(limitValue);
 
   if (yearValidation.value) {
     query = query.eq("calendarYear", yearValidation.value);
@@ -102,6 +104,7 @@ async function queryFinancialsTable(table, sector, selectedMetric, yearValidatio
 
   return query;
 }
+
 
 // ---------- Main Controller ----------
 export const getTopStocksBySector = async (req, res, next) => {
@@ -236,8 +239,8 @@ export const getAvailableSectors = async (req, res, next) => {
     // Try NSE first
     let { data, error } = await supabase
       .from("COMPANY_FINANCIALS")
-      .select("sector")
-      .not("sector", "is", null);
+      .select("Sector")
+      .not("Sector", "is", null);
 
     if (error) return next(error);
 
@@ -245,15 +248,15 @@ export const getAvailableSectors = async (req, res, next) => {
       // fallback to BSE
       const { data: fallbackData, error: fallbackError } = await supabase
         .from("BSE_COMPANY_FINANCIALS")
-        .select("sector")
-        .not("sector", "is", null);
+        .select("Sector")
+        .not("Sector", "is", null);
 
       if (fallbackError) return next(fallbackError);
 
       data = fallbackData || [];
     }
 
-    const uniqueSectors = [...new Set(data.map((item) => item.sector))].sort();
+    const uniqueSectors = [...new Set(data.map((item) => item.Sector))].sort();
 
     res.json(
       formatResponse("success", "Available sectors", {
