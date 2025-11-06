@@ -6,7 +6,7 @@ import routesList from "./src/utils/routeLists.js";
 import formatResponse from "./src/utils/responseFormatter.js";
 import comparisonRoutes from "./src/routes/comparisonRoutes.js";
 import newsRoutes from "./src/routes/newsRoutes.js";
-
+import dailyRoutes from "./src/routes/dailyRoutes.js";
 dotenv.config();
 
 const app = express();
@@ -37,6 +37,7 @@ app.get("/health", (req, res) => {
 app.use("/server/company", companyRoutes);  
 app.use("/server/comparison", comparisonRoutes);
 app.use("/server/news", newsRoutes);
+app.use("/server/daily", dailyRoutes);
 
 // Error handling
 app.use(errorHandler);

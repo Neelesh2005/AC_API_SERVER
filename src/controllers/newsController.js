@@ -94,3 +94,26 @@ export const getNewsByTicker = async (req, res) => {
       );
   }
 };
+export const getIndexNewsAndSources = async (req, res, next) => {
+  try {
+    const { data, error } = await supabase
+      .from("indexNews_main")
+      .select("header,detail");
+    
+    if (error) {
+      return next(error);
+    }
+
+    const { data: sources, error: sourcesError } = await supabase
+      .from("indexNews_sources")
+      .select("source_title,source_url");
+
+    if (sourcesError) {
+      return next(sourcesError);
+    }
+
+    res.json(formatResponse("success", "Index news retrieved successfully", { news: data, sources }));
+  } catch (err) {
+    next(err);
+  }
+};
