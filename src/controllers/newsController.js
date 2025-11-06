@@ -67,7 +67,6 @@ export const getNewsByTicker = async (req, res) => {
         }
       }
 
-      // Step 3: If no data even after fallback
       return res.status(404).json(
         formatResponse(
           "not_found",
@@ -79,7 +78,6 @@ export const getNewsByTicker = async (req, res) => {
       );
     }
 
-    // Step 4: If data found initially
     res.json(
       formatResponse("success", `News for ticker ${fallbackInfo.primary}`, {
         redirected: false,
