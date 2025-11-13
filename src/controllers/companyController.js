@@ -387,7 +387,7 @@ export const getRatiosBySymbol = async (req, res, next) => {
     incomeBeforeTaxRatio,
     netIncomeRatio,
     grossProfitMargin,
-    epsRatio
+    eps
   `;
 
   await fetchFinancials({
